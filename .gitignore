@@ -209,8 +209,8 @@ __marimo__/
 # Данные
 data/raw/
 data/processed/
-*.csv
-*.json
+!*.csv
+!*.json
 *.pkl
 *.h5
 *.model
