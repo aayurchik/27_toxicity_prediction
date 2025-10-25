@@ -1,1 +1,8 @@
+***Overview***: https://tdcommons.ai/single_pred_tasks/tox/#carcinogens
 
+***Datasets from***: https://huggingface.co/scikit-fingerprints/datasets?p=1
+
+Можно открыть все датасеты сразу в Jupyter, используя скрипт к каждому датасету с сайта. Перед запуском запустить и после сделать kernel restart:
+
+!pip install datasets
+!pip install huggingface_hub[hf_xet]
