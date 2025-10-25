@@ -14,11 +14,9 @@ https://huggingface.co/scikit-fingerprints/datasets?p=1
 
 !pip install huggingface_hub[hf_xet]
 
-Пример выгрузки датасета: 
+*Пример выгрузки датасета:*
 
 from datasets import load_dataset
 ds = load_dataset("scikit-fingerprints/TDC_carcinogens_lagunin")
-
-# Преобразуем в pandas DataFrame
 df = ds["train"].to_pandas()
 print(df.head())
