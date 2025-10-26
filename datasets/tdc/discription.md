@@ -1,21 +1,24 @@
- ## **Overview**:
+## Overview
 
-https://tdcommons.ai/single_pred_tasks/tox/#carcinogens
+**Source:**  
+[TDC Commons - Toxicity Tasks](https://tdcommons.ai/single_pred_tasks/tox/#carcinogens)
 
+## Datasets
 
-## **Datasets csv from**: 
+CSV datasets available from:  
+[HuggingFace Datasets Repository](https://huggingface.co/scikit-fingerprints/datasets?p=1)
 
-https://huggingface.co/scikit-fingerprints/datasets?p=1
+## Installation & Setup  
 
+Datasets can be opened directly in Jupyter. First run these commands, then restart the kernel:
 
-Можно открыть все датасеты сразу в Jupyter. Но сначала запустить это и после сделать kernel restart:
+```bash
+!pip install datasets
+!pip install huggingface_hub[hf_xet]
 
-!pip install datasets  
-!pip install huggingface_hub[hf_xet]  
+# Example: Loading carcinogens dataset
+from datasets import load_dataset
 
-**Пример выгрузки датасета:**
-
-from datasets import load_dataset  
-ds = load_dataset("scikit-fingerprints/TDC_carcinogens_lagunin")  
-df = ds["train"].to_pandas()  
-print(df.head())  
+ds = load_dataset("scikit-fingerprints/TDC_carcinogens_lagunin")
+df = ds["train"].to_pandas()
+print(df.head())
