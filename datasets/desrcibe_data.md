@@ -35,9 +35,6 @@ Katja Hansen, Sebastian Mika, Timon Schroeter, Andreas Sutter, Antonius ter Laak
 [ToxBenchmark Documentation](https://doc.ml.tu-berlin.de/toxbenchmark/)
 
 
-
-
-
 ## ClinTox
 Dataset Description: The ClinTox dataset includes drugs that have failed clinical trials for toxicity reasons and also drugs that are associated with successful trials.
 Task Description: Binary classification. Given a drug SMILES string, predict the clinical toxicity.
