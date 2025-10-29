@@ -45,3 +45,19 @@ The expanded predictive toxicology dataset is sourced from TOXRIC, a comprehensi
 
 ## tox 21
 The Tox21 data set comprises 12,060 training samples and 647 test samples that represent chemical compounds. There are 801 "dense features" that represent chemical descriptors, such as molecular weight, solubility or surface area, and 272,776 "sparse features" that represent chemical substructures (ECFP10, DFS6, DFS8; stored in Matrix Market Format ). Machine learning methods can either use sparse or dense data or combine them. For each sample there are 12 binary labels that represent the outcome (active/inactive) of 12 different toxicological experiments. Note that the label matrix contains many missing values (NAs). The original data source and Tox21 challenge site is https://tripod.nih.gov/tox21/challenge/.
+
+**Tox21 Assays Расшифровка:**  
+- SR-HSE - Heat Shock Element Response  
+- SR-ARE - Antioxidant Response Element  
+- SR-MMP - Mitochondrial Membrane Potential  
+- SR-p53 - p53 Tumor Suppressor Pathway  
+- SR-ATAD5 - DNA Damage Response (ATAD5 biomarker)  
+- NR-AR - Androgen Receptor  
+- NR-AR-LBD - Androgen Receptor Ligand Binding Domain  
+- NR-Aromatase - Aromatase Enzyme Inhibition  
+- NR-ER - Estrogen Receptor  
+- NR-ER-LBD - Estrogen Receptor Ligand Binding Domain  
+- NR-AhR - Aryl Hydrocarbon Receptor  
+- NR-PPAR-gamma - Peroxisome Proliferator-Activated Receptor Gamma  
+- SR-анализы - измеряют клеточный стресс и повреждения ДНК
+- NR-анализы - оценивают взаимодействие с гормональными рецепторами
