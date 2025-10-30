@@ -1,3 +1,6 @@
+https://drive.google.com/drive/folders/1507fWPBzKVexMTF6BxvOMeU_2COTuuBA?usp=sharing
+
+
 СТАТИСТИКА ЭМБЕДДИНГОВ:  
 
 Общее количество: 339,061  
@@ -7,8 +10,3 @@ Max: 1.102271
 Mean: -0.004316  
 Std:  0.111459  
 NaN values: 0  
-Inf values: 0  
-
-По измерениям:  
-Среднее по измерениям: [-0.2880, 0.2887]  
-Стд по измерениям: [0.0264, 0.0649]  
