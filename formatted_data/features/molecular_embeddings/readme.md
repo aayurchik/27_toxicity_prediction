@@ -29,7 +29,7 @@ import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 
 # Создаем папку для сохранения результатов обработки
-# Все файлы будут сохранены в указанную директорию
+# Все файлы сохранены в указанную директорию
 results_dir = '/content/drive/MyDrive/Colab Notebooks/mol2vec_results'
 os.makedirs(results_dir, exist_ok=True)
 
