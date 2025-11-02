@@ -78,20 +78,17 @@ keywords = [
     "HallKier", # альфа-индексы
     "Labute",   # ASA поверхности
     "ExactMolWt", # точный молекулярный вес
-    "MolMR"     # молярная рефракция
-]
+    "MolMR"     # молярная рефракция]
 
 # Фильтрация дескрипторов по ключевым словам
 # Создаем множество для автоматического удаления дубликатов
 selected_names = sorted({
     name for name in all_names
-    if any(kw.lower() in name.lower() for kw in keywords)
-})
+    if any(kw.lower() in name.lower() for kw in keywords)})
 
 # Создание калькулятора дескрипторов
 # Калькулятор будет вычислять все выбранные дескрипторы за один вызов
 calc = MoleculeDescriptors.MolecularDescriptorCalculator(selected_names)
-
 def safe_calc(smiles):
     """
     Безопасное вычисление дескрипторов для одного SMILES
@@ -99,7 +96,6 @@ def safe_calc(smiles):
     
     Args:
         smiles (str): SMILES строка молекулы
-        
     Returns:
         list: список значений дескрипторов или NaN при ошибке
     """
@@ -109,7 +105,6 @@ def safe_calc(smiles):
         if mol is None:
             # Возвращаем NaN для всех дескрипторов если SMILES невалидный
             return [np.nan] * len(selected_names)
-        
         # Вычисление всех выбранных дескрипторов
         return list(calc.CalcDescriptors(mol))
         
@@ -119,18 +114,14 @@ def safe_calc(smiles):
 
 # Параллельное вычисление дескрипторов батчами
 results = []  # список для хранения результатов
-
 # Обработка данных батчами для контроля использования памяти
 for start in tqdm(range(0, len(df), batch_size), desc="Обработка батчей"):
     # Извлечение батча SMILES
     batch_smiles = df['smiles'].iloc[start:start+batch_size].values
-    
     # Параллельное вычисление дескрипторов для батча
     # Используем все доступные ядра CPU
     batch_vals = Parallel(n_jobs=n_jobs)(
-        delayed(safe_calc)(s) for s in batch_smiles
-    )
-    
+        delayed(safe_calc)(s) for s in batch_smiles)
     # Добавление результатов батча в общий список
     results.extend(batch_vals)
 
@@ -140,7 +131,6 @@ desc_array = np.array(results)
 
 # Создание DataFrame с дескрипторами
 desc_df = pd.DataFrame(desc_array, columns=selected_names)
-
 # Добавление колонки с SMILES в начало таблицы
 desc_df.insert(0, 'smiles', df['smiles'].values)
 
@@ -150,7 +140,6 @@ numeric = desc_df.drop(columns=['smiles'])  # временный DataFrame бе�
 
 # Поиск колонок с одним или менее уникальных значений
 const_cols = numeric.columns[numeric.nunique(dropna=False) <= 1].tolist()
-
 if const_cols:
     # Удаление константных колонок из основного DataFrame
     desc_df = desc_df.drop(columns=const_cols)
