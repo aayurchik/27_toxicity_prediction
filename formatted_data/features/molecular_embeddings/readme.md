@@ -43,13 +43,11 @@ def patched_sentences2vec(sentences, model, unseen=None):
         sentences: список "предложений" молекулы (атомные окружения)
         model: предобученная Word2Vec модель
         unseen: стратегия для незнакомых слов
-    
     Returns:
         list: вектора для каждого предложения
     """
     # Получаем словарь модели (замена устаревшему model.wv.vocab в Gensim 4.x)
     keys = model.wv.key_to_index
-    
     # Создаем вектор для незнакомых слов (out-of-vocabulary)
     unseen_vec = None
     if unseen is not None:
@@ -85,11 +83,9 @@ def patched_sentences2vec(sentences, model, unseen=None):
 # Пути к входным и выходным файлам
 input_path = '/content/drive/MyDrive/Colab Notebooks/full_combined_cleaned.csv'  # исходные данные
 output_path_csv = f'{results_dir}/mol2vec_embeddings_full.csv'  # выходной файл с эмбеддингами
-
 # Загрузка и предобработка SMILES данных
 # Читаем только колонку с SMILES для экономии памяти
 df = pd.read_csv(input_path, usecols=['smiles'])
-
 # удаляем дубликаты SMILES
 df = df.drop_duplicates(subset=['smiles']).reset_index(drop=True)
 
@@ -111,7 +107,6 @@ def process_smiles(smiles):
     
     Args:
         smiles (str): SMILES строка молекулы
-    
     Returns:
         tuple: (вектор эмбеддинга, исходный SMILES, статус обработки)
     """
@@ -120,7 +115,6 @@ def process_smiles(smiles):
         mol = Chem.MolFromSmiles(smiles)
         if mol is None:
             return None, smiles, "invalid_smiles"  # невалидный SMILES
-        
         # Генерируем 'предложение' из атомных окружений
         # radius=1 означает рассмотрение соседей на расстоянии 1 связи
         from mol2vec.features import mol2alt_sentence
@@ -143,9 +137,7 @@ def process_smiles(smiles):
 # Joblib распределяет обработку по ядрам, tqdm показывает прогресс-бар
 results = Parallel(n_jobs=-1)(
     delayed(process_smiles)(smiles) 
-    for smiles in tqdm(df['smiles'], desc="Generating Mol2Vec embeddings")
-)
-
+    for smiles in tqdm(df['smiles'], desc="Generating Mol2Vec embeddings"))
 # Сбор успешных результатов из параллельной обработки
 successful_embeddings = []  # список успешных векторов
 successful_smiles = []      # соответствующие SMILES строки
@@ -159,15 +151,11 @@ for vec, smiles, status in results:
 if successful_embeddings:
     # Конвертируем список векторов в numpy array для эффективности
     emb_array = np.array(successful_embeddings)
-    
     # Создаем названия колонок: mol2vec_0, mol2vec_1, ..., mol2vec_299
     emb_cols = [f"mol2vec_{i}" for i in range(emb_array.shape[1])]
-    
     # Создаем DataFrame с эмбеддингами и SMILES
     emb_df = pd.DataFrame(emb_array, columns=emb_cols)
     emb_df.insert(0, 'smiles', successful_smiles)  # добавляем SMILES в первую колонку
-    
     # Сохраняем в CSV файл
     emb_df.to_csv(output_path_csv, index=False)
-
     print(f"Размерность данных: {emb_df.shape}")
