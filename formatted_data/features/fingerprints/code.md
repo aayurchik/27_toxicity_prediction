@@ -59,7 +59,6 @@ invalid_smiles = []  # список для невалидных SMILES
 # Используем списки для координат ненулевых элементов разреженной матрицы
 rows, cols = [], []  # rows - индексы молекул, cols - установленные биты
 
-print("Вычисление Morgan fingerprints батчами...")
 # Обрабатываем данные батчами с прогресс-баром
 for start in tqdm(range(0, N, batch_size), desc="Обработка батчей"):
     batch_end = min(start + batch_size, N)  # конец текущего батча
@@ -87,11 +86,8 @@ for start in tqdm(range(0, N, batch_size), desc="Обработка батчей
 data = np.ones(len(rows), dtype=np.uint8)  # все ненулевые элементы = 1
 # Создаем координатную матрицу (COO) и конвертируем в CSR
 csr = sparse.coo_matrix((data, (rows, cols)), shape=(N, nBits), dtype=np.uint8).tocsr()
-
-# Сохранение результатов
 # Сохраняем разреженную матрицу в формате NPZ
 sparse.save_npz(os.path.join(out_dir, 'morgan_fp.npz'), csr)
-
 # Создаем CSV файл с соответствием индексов и SMILES
 df_smiles = pd.DataFrame({
     'index': np.arange(N),  # индекс молекулы в матрице
