@@ -1,0 +1,8 @@
+[
+  {
+    "smiles": "Br.CC(Cc1ccc(O)cc1)NCC(O)c1cc(O)cc(O)c1",
+    "BCUT2D_LOGPHI": 2.2423031144854946,
+    "BCUT2D_LOGPLOW": -2.315609536086205,
+    "BalabanJ": 2.6449974458525247e-06
+  }
+]
