@@ -211,7 +211,7 @@ data/raw/
 data/processed/
 !*.csv
 !*.json
-*.pkl
+.pkl
 *.h5
 *.model
 formatted_data/features/eda_features_df.csv
