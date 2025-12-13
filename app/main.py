@@ -112,7 +112,7 @@ async def forward(request: Request):
     except Exception:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='модель не смогла обработать данные')
 
-# Реализуйте GET-запрос /history, в котором будет показываться история всех запросов. История всех запросов должна находиться в базе данных.   
+
 
        
                 
