@@ -25,6 +25,8 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import Column, Integer, String, Text, DateTime
 from datetime import datetime
+import time
+
 
 class Base(DeclarativeBase):
     pass
@@ -185,6 +187,7 @@ async def health_check():
 
 @app.post("/forward", status_code=status.HTTP_200_OK, tags=["Predict"])
 async def forward(request: Request, db: AsyncSession = Depends(get_db)):
+    start_time = time.time()
     try:
         body = await request.json()
     # Если запрос неверного формата, то должен возвращаться код ошибки 400 с текстом ‘bad request’
@@ -192,7 +195,7 @@ async def forward(request: Request, db: AsyncSession = Depends(get_db)):
         await save_history(
             db=db,
             endpoint="/forward",
-            request_body=body,
+            request_body=None,
             response_body=None,
             code = 400
         )
@@ -219,10 +222,13 @@ async def forward(request: Request, db: AsyncSession = Depends(get_db)):
                 "smile": smile,
                 "toxity": int(prediction[0])
             })
+        processing_time = time.time() - start_time
         await save_history(
             db=db,
             endpoint="/forward",
-            request_body=body,
+            request_body={
+                "data": body,
+                "processing_time": processing_time},
             response_body=results,
             code = 200
         )
@@ -230,13 +236,15 @@ async def forward(request: Request, db: AsyncSession = Depends(get_db)):
         return JSONResponse(content=results)
     # Если модель не смогла выполнить работу, то необходимо вернуть код ошибки 403 и вернуть сообщение: “модель не смогла обработать данные”
     except Exception:
+            processing_time = time.time() - start_time
             await save_history(
             db=db,
             endpoint="/forward",
-            request_body=body,
+            request_body={
+                "data": body,
+                "processing_time": processing_time},
             response_body=None,
-            code = status.HTTP_403_FORBIDDEN
-        )
+            code = status.HTTP_403_FORBIDDEN)
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='модель не смогла обработать данные')
     
 
@@ -259,6 +267,56 @@ async def history(db: AsyncSession = Depends(get_db)):
         for event in events
     ]
 
+@app.get("/stats", status_code=status.HTTP_200_OK, tags=["Stats"])
+async def stats(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(History))
+    records = result.scalars().all()
+
+    processing_times = []
+    message_lengths = []
+    token_counts = []
+
+    for record in records:
+        if record.request_body is None:
+            continue
+
+        try:
+            body = json.loads(record.request_body)
+
+            # время обработки
+            if "processing_time" in body:
+                processing_times.append(body["processing_time"])
+
+            # длина сообщения
+            message = json.dumps(body.get("data", ""))
+            message_lengths.append(len(message))
+
+            # количество "токенов"
+            token_counts.append(len(message.split()))
+
+        except Exception:
+            continue
+
+# (5 баллов) Реализуйте запрос /stats, который возвращает статистику запросов:
+# среднее время обработки, квантили распределения (mean/50%/95%/99%)
+# характеристики входных запросов (длина сообщения/количество токенов, если работаем с текстом; размеры изображений)
+
+    def safe_percentile(data, q):
+        return float(np.percentile(data, q)) if data else 0.0
+
+    return {
+        "processing_time": {
+            "mean": float(np.mean(processing_times)) if processing_times else 0.0,
+            "p50": safe_percentile(processing_times, 50),
+            "p95": safe_percentile(processing_times, 95),
+            "p99": safe_percentile(processing_times, 99),
+        },
+        "input_stats": {
+            "avg_message_length": float(np.mean(message_lengths)) if message_lengths else 0.0,
+            "avg_token_count": float(np.mean(token_counts)) if token_counts else 0.0,
+        },
+        "total_requests": len(records)
+    }
 
        
                 
