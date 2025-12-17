@@ -302,7 +302,7 @@ async def stats(db: AsyncSession = Depends(get_db)):
             "average_token_count": float(np.mean(token_counts)) if token_counts else 0.0,},
         "total_requests": len(all_records)}
 
-    # (2 балла, PRO) Реализуйте DELETE-запрос /history, который удаляет историю предыдущих вызовов. В качестве заголовка запроса должен быть подтверждающий токен, который верифицирует данные
+# (2 балла, PRO) Реализуйте DELETE-запрос /history, который удаляет историю предыдущих вызовов. В качестве заголовка запроса должен быть подтверждающий токен, который верифицирует данные
 
 # токен админа
 ADMIN_TOKEN = "secretoken"
@@ -312,7 +312,7 @@ async def delete_history(token: str = Header(...), db: AsyncSession = Depends(ge
     Удаляет всю историю запросов. Требуется передача токена администратора через заголовок `token`.
     """
     if token != ADMIN_TOKEN:
-        # Неверный токен — запрещено
+        # если неверный токен, то запрещено
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied: invalid token")
     try:
         # Удаляем все записи из таблицы History
