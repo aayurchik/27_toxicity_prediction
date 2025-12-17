@@ -305,7 +305,7 @@ async def stats(db: AsyncSession = Depends(get_db)):
     # (2 балла, PRO) Реализуйте DELETE-запрос /history, который удаляет историю предыдущих вызовов. В качестве заголовка запроса должен быть подтверждающий токен, который верифицирует данные
 
 # токен админа
-ADMIN_TOKEN = "мой_новый_секретный_токен"
+ADMIN_TOKEN = "secretoken"
 @app.delete("/history", status_code=status.HTTP_200_OK, tags=["History"])
 async def delete_history(token: str = Header(...), db: AsyncSession = Depends(get_db)):
     """
