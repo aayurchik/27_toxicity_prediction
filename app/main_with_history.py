@@ -3,7 +3,8 @@ from fastapi.responses import JSONResponse
 from typing import Any, Optional
 import json
 import numpy as np
-
+from typing import Dict, List
+from fastapi import Body
 import pickle
 import json
 from pathlib import Path
@@ -182,71 +183,72 @@ async def health_check():
         "service": "FastAPI Toxicity Prediction"
     }
 
+# Pydantic-модель для входных данных
+class ForwardItem(BaseModel):
+    smiles: str
+    features: Dict[str, float]  # все feature1, feature2, ..., featureN
+
 # В FastAPI должен быть route типа POST на /forward, который должен принимать один из двух форматов:
 # Если данные не содержат изображений, то необходимо передавать входные данные в теле запроса в формате JSON
-
 @app.post("/forward", status_code=status.HTTP_200_OK, tags=["Predict"])
-async def forward(request: Request, db: AsyncSession = Depends(get_db)):
-    start_time = time.time()
-    try:
-        body = await request.json()
+async def forward(
+    request_body: List[ForwardItem] = Body(...),
+    db: AsyncSession = Depends(get_db)):
+    start_time = time.time()  # измеряем время обработки запроса
+    # Преобразуем Pydantic-модель в обычный список словарей
+    # Каждый словарь содержит smiles + все фичи
+    body = []
+    for item in request_body:
+        d = {"smiles": item.smiles}
+        d.update(item.features)
+        body.append(d)
     # Если запрос неверного формата, то должен возвращаться код ошибки 400 с текстом ‘bad request’
-    except Exception:
+    if not body:
         await save_history(
             db=db,
             endpoint="/forward",
             request_body=None,
             response_body=None,
-            code = 400
-        )
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="bad request")
-    # аналогично выкидываем если дело пустое
-    if body is None:
-        await save_history(
-            db=db,
-            endpoint="/forward",
-            request_body=body,
-            response_body=None,
-            code = 400
+            code=400
         )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="bad request")
     
     model = get_model()
     
-    try: 
+    try:
         results = []
-        for i,j in enumerate(body):
+        # Прогоняем все данные через модель
+        # Для каждого элемента создаём результат с smiles и toxity
+        for j in body:
             smile, input_data = Features.json_parse(j)
             prediction = model.predict(input_data)
             results.append({
                 "smile": smile,
                 "toxity": int(prediction[0])
             })
+        
+        processing_time = time.time() - start_time  # измеряем фактическое время обработки
+        await save_history(
+            db=db,
+            endpoint="/forward",
+            request_body={"data": body, "processing_time": processing_time},
+            response_body=results,
+            code=200
+        )
+        # Если модель отработала успешно, возвращаем результаты в формате JSON
+        return JSONResponse(content=results)
+    
+    # Если модель не смогла выполнить работу, то необходимо вернуть код ошибки 403 и вернуть сообщение: “модель не смогла обработать данные”
+    except Exception:
         processing_time = time.time() - start_time
         await save_history(
             db=db,
             endpoint="/forward",
-            request_body={
-                "data": body,
-                "processing_time": processing_time},
-            response_body=results,
-            code = 200
-        )
-        # Если модель отработала, то возвращаем результаты в одном из подходящих форматов: JSON
-        return JSONResponse(content=results)
-    # Если модель не смогла выполнить работу, то необходимо вернуть код ошибки 403 и вернуть сообщение: “модель не смогла обработать данные”
-    except Exception:
-            processing_time = time.time() - start_time
-            await save_history(
-            db=db,
-            endpoint="/forward",
-            request_body={
-                "data": body,
-                "processing_time": processing_time},
+            request_body={"data": body, "processing_time": processing_time},
             response_body=None,
-            code = status.HTTP_403_FORBIDDEN)
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='модель не смогла обработать данные')
-    
+            code=status.HTTP_403_FORBIDDEN
+        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='модель не смогла обработать данные')
 
 # Реализуйте GET-запрос /history, в котором будет показываться история всех запросов. История всех запросов должна находиться в базе данных.   
 @app.get("/history", status_code=status.HTTP_200_OK, tags=["History"])
