@@ -6,12 +6,14 @@ import time
 from typing import Any, Dict, List, Optional, AsyncGenerator
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request, status, Header, Body, Depends
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import BaseModel, Field, ConfigDict
 import numpy as np
 from sqlalchemy import Column, String, Integer, Text, DateTime, select, delete, text
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker, AsyncEngine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from fastapi.exceptions import RequestValidationError
+
 
 class Base(DeclarativeBase):
     pass
@@ -153,6 +155,11 @@ async def root():
         "documentation": "/docs",
         "version": "1.0.0"
     }
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc: RequestValidationError):
+    return PlainTextResponse(content="bad request", status_code=status.HTTP_400_BAD_REQUEST)
+
 
 @app.get("/health", status_code=status.HTTP_200_OK, tags=["Health"])
 async def health_check():
