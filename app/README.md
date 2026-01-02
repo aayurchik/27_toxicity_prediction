@@ -1,7 +1,7 @@
 # FastAPI Toxicity Prediction
 
-* main.py 
-* test_data - тут тестовые json
+* main.py - код по заданию.
+* test_data - в папке примеры для тестов json с разными случаями.
 
 Swagger UI: http://localhost:8000/docs
 
