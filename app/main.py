@@ -22,6 +22,71 @@ app = FastAPI(
     title="FastAPI Toxicity Prediction",
     description="Prediction of toxicity of chemical compounds based on their physicochemical properties",
     version="1.0.0")
+@app.middleware("http")
+
+# обработка ошибок
+async def history_middleware(request: Request, call_next):
+    start_time = time.time()
+    request_body = None
+    try:
+        if request.method in ("POST", "PUT", "PATCH"):
+            request_body = await request.json()
+    except Exception:
+        request_body = None
+    response = None
+    response_body = None
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = getattr(response, "status_code", 200)
+        # получить тело ответа
+        if hasattr(response, "body") and response.body:
+            try:
+                body_bytes = response.body
+                if isinstance(body_bytes, bytes):
+                    body_bytes = body_bytes.decode()
+                response_body = json.loads(body_bytes)
+            except Exception:
+                response_body = str(response.body)
+
+    except HTTPException as e:
+        # сохраняем реальный код ошибки
+        status_code = e.status_code
+        response_body = {"error": e.detail}
+        response = JSONResponse(content=response_body, status_code=status_code)
+
+    except RequestValidationError as e:
+        # Ошибка валидации 400
+        status_code = 400
+        response_body = {"error": "bad request"}
+        response = JSONResponse(content=response_body, status_code=status_code)
+
+    except Exception as e:
+        # любая непредвиденная ошибка 500
+        status_code = 500
+        response_body = {"error": str(e)}
+        response = JSONResponse(content=response_body, status_code=status_code)
+
+    finally:
+        processing_time = time.time() - start_time
+        try:
+            async with AsyncSessionLocal() as db:
+                await save_history(
+                    db=db,
+                    endpoint=request.url.path,
+                    request_body={
+                        "data": request_body,
+                        "processing_time": processing_time
+                    } if request_body else {"processing_time": processing_time},
+                    response_body=response_body,
+                    code=status_code)
+        except Exception:
+            # логирование истории не должно ломать основной ответ
+            pass
+    return response
+
+
+
 class Model:
     def  __init__(self, model_path: str = "trained_models/knn_neuro_sensory_toxicity.pkl"):
         self.path = Path(model_path)
@@ -156,10 +221,6 @@ async def root():
         "version": "1.0.0"
     }
 
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request, exc: RequestValidationError):
-    return PlainTextResponse(content="bad request", status_code=status.HTTP_400_BAD_REQUEST)
-
 
 @app.get("/health", status_code=status.HTTP_200_OK, tags=["Health"])
 async def health_check():
@@ -182,13 +243,6 @@ async def forward(
     db: AsyncSession = Depends(get_db)):
     start_time = time.time()  # измеряем время обработки запроса
     if not request_body:
-        # если массив пустой, возвращаем 400
-        await save_history(
-            db=db,
-            endpoint="/forward",
-            request_body=None,
-            response_body=None,
-            code=400)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="bad request: пустой массив данных")
     # Преобразуем Pydantic-модель в обычный список словарей
     # Каждый словарь содержит smiles + все фичи
@@ -196,24 +250,12 @@ async def forward(
     for item in request_body:
          # Проверяем пустые словари внутри массива
         if not item.smiles or not item.features:
-            await save_history(
-                db=db,
-                endpoint="/forward",
-                request_body=item.dict(),
-                response_body=None,
-                code=400)
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="bad request: пустой объект внутри массива")
         d = {"smiles": item.smiles}
         d.update(item.features)
         body.append(d)
     # Если запрос неверного формата, то должен возвращаться код ошибки 400 с текстом ‘bad request’
     if not body:
-        await save_history(
-            db=db,
-            endpoint="/forward",
-            request_body=None,
-            response_body=None,
-            code=400)
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="bad request")
     
     model = get_model()
@@ -229,24 +271,11 @@ async def forward(
                 "smiles": smiles,
                 "toxity": int(prediction[0])})
         processing_time = time.time() - start_time  # измеряем фактическое время обработки
-        await save_history(
-            db=db,
-            endpoint="/forward",
-            request_body={"data": body, "processing_time": processing_time},
-            response_body=results,
-            code=200)
-        # Если модель отработала успешно, возвращаем результаты в формате JSON
         return JSONResponse(content=results)
     
     # Если модель не смогла выполнить работу, то необходимо вернуть код ошибки 403 и вернуть сообщение: “модель не смогла обработать данные”
     except Exception:
         processing_time = time.time() - start_time
-        await save_history(
-            db=db,
-            endpoint="/forward",
-            request_body={"data": body, "processing_time": processing_time},
-            response_body=None,
-            code=status.HTTP_403_FORBIDDEN)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='модель не смогла обработать данные')
 
 # (5 баллов) Реализуйте GET-запрос /history, в котором будет показываться история всех запросов. История всех запросов должна находиться в базе данных.
