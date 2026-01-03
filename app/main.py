@@ -22,24 +22,29 @@ app = FastAPI(
     title="FastAPI Toxicity Prediction",
     description="Prediction of toxicity of chemical compounds based on their physicochemical properties",
     version="1.0.0")
-@app.middleware("http")
 
+@app.middleware("http")
 # обработка ошибок
 async def history_middleware(request: Request, call_next):
     start_time = time.time()
     request_body = None
-    try:
-        if request.method in ("POST", "PUT", "PATCH"):
+
+    # попытка прочитать тело запроса (для POST/PUT/PATCH)
+    if request.method in ("POST", "PUT", "PATCH"):
+        try:
             request_body = await request.json()
-    except Exception:
-        request_body = None
-    response = None
+        except Exception:
+            request_body = None
+
     response_body = None
-    status_code = 500
+    status_code = 500  # дефолтный код на случай непредвиденной ошибки
+
     try:
+        # Основной вызов эндпоинта
         response = await call_next(request)
         status_code = getattr(response, "status_code", 200)
-        # получить тело ответа
+
+        # Попытка извлечь тело ответа
         if hasattr(response, "body") and response.body:
             try:
                 body_bytes = response.body
@@ -47,27 +52,27 @@ async def history_middleware(request: Request, call_next):
                     body_bytes = body_bytes.decode()
                 response_body = json.loads(body_bytes)
             except Exception:
-                response_body = str(response.body)
+                response_body = str(getattr(response, "body", None))
 
-    except HTTPException as e:
-        # сохраняем реальный код ошибки
-        status_code = e.status_code
-        response_body = {"error": e.detail}
-        response = JSONResponse(content=response_body, status_code=status_code)
-
-    except RequestValidationError as e:
-        # Ошибка валидации 400
+    except RequestValidationError:
+        # любые ошибки валидации Pydantic/FastAPI
         status_code = 400
         response_body = {"error": "bad request"}
         response = JSONResponse(content=response_body, status_code=status_code)
 
+    except HTTPException as e:
+        status_code = e.status_code
+        response_body = {"error": e.detail}
+        response = JSONResponse(content=response_body, status_code=status_code)
+
     except Exception as e:
-        # любая непредвиденная ошибка 500
+        # любые другие непредвиденные ошибки
         status_code = 500
         response_body = {"error": str(e)}
         response = JSONResponse(content=response_body, status_code=status_code)
 
     finally:
+        # вычисляем реальное время обработки запроса
         processing_time = time.time() - start_time
         try:
             async with AsyncSessionLocal() as db:
@@ -83,7 +88,9 @@ async def history_middleware(request: Request, call_next):
         except Exception:
             # логирование истории не должно ломать основной ответ
             pass
+
     return response
+
 
 
 
