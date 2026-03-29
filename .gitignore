@@ -239,4 +239,10 @@ venv/
 .idea/
 
 
+<<<<<<< HEAD
 .DS_Store
+=======
+*.DS_Store
+*.joblib
+*.csv
+>>>>>>> e3526be (rf)
