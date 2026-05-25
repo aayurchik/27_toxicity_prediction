@@ -1,0 +1,110 @@
+services:
+  postgres:
+    container_name: postgres
+    env_file:
+      - ./.env
+    image: postgres:16.2
+    networks:
+      - internal
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - ./build/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  mlflow-service:
+    # image: ghcr.io/mlflow/mlflow:v2.15.1
+    image: ghcr.io/mlflow/mlflow:v3.12.0
+    env_file:
+      - ./.env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      DEFAULT_BUCKET_NAME: ${DEFAULT_BUCKET_NAME}
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: admin
+      AWS_SECRET_ACCESS_KEY: password
+      # AWS_DEFAULT_REGION: ru-central1
+    command:
+      - bash
+      - -c
+      - |
+        pip install boto3 psycopg2-binary --quiet
+        mlflow server --host 0.0.0.0 --port 5000 \
+            --backend-store-uri postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB} \
+            --default-artifact-root s3://mlflow-bucket/mlflow \
+            --artifacts-destination s3://mlflow-bucket/mlflow \
+            --serve-artifacts
+    expose:
+      - "5000"
+    ports:
+      - "5050:5000"
+    networks:
+      - internal
+    volumes:
+      # - mlflow-data:/mlflow
+      - ./data/mlflow:/mlflow
+
+  minio:
+    image: quay.io/minio/minio
+    container_name: minio
+    ports:
+      - '${S3_API_PORT}:9000'
+      - '${S3_UI_PORT}:9001'
+    volumes:
+      - 'minio_data:/data'
+    env_file:
+      - ./.env
+    networks:
+      - internal
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 1m30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: always
+  
+  mc:
+    image: quay.io/minio/mc
+    container_name: minio_mc
+    volumes:
+      - minio_data:/data
+    env_file: "./.env"
+    networks:
+      - internal
+    entrypoint: >
+      bash -c "
+      mc alias set minio http://minio:9000 ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD} &&
+      if ! mc ls minio | grep --quiet ${DEFAULT_BUCKET_NAME}; then
+        mc mb minio/${DEFAULT_BUCKET_NAME}
+      else
+        echo '${DEFAULT_BUCKET_NAME} already exists'
+      fi
+      "
+    depends_on:
+      minio:
+        condition: service_healthy
+    restart: on-failure
+
+volumes:
+  mlflow-data:
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: ./data/mlflow_data
+  minio_data:
+    driver: local
+    driver_opts:
+      o: bind
+      type: none
+      device: ./data/minio_data
+
+networks:
+  internal:
+    driver: bridge
