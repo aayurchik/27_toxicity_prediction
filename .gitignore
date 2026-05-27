@@ -244,5 +244,6 @@ venv/
 *.joblib
 *.csv
 
-data/minio_data/*
-data/*
+data/minio_data/
+.minio.sys/
+*.minio.sys/
