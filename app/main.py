@@ -1,301 +1,140 @@
-import json
-import pickle
-from pathlib import Path
-from datetime import datetime
-import time
-from typing import Any, Dict, List, Optional, AsyncGenerator
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, Request, status, Header, Body, Depends
-from fastapi.responses import JSONResponse, PlainTextResponse
-from pydantic import BaseModel, Field, ConfigDict
+from fastapi import FastAPI, HTTPException, status, Header, Depends
+from fastapi.responses import JSONResponse
 import numpy as np
-from sqlalchemy import Column, String, Integer, Text, DateTime, select, delete, text
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker, AsyncEngine
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from fastapi.exceptions import RequestValidationError
+import json
+
+from app.config import settings
+from app.models.tox_model import ToxModel
+from app.schemas.requests import ForwardItem, HealthResponse
+from app.database.db import SessionLocal, init_db, close_db
+from app.database.models import History
+from app.services.prediction import PredictionService
+from app.services.history import HistoryService
+from app.middleware.history import HistoryMiddleware
 
 
-class Base(DeclarativeBase):
-    pass
-# Инициализация приложения FastAPI
-app = FastAPI(
-    title="FastAPI Toxicity Prediction",
-    description="Prediction of toxicity of chemical compounds based on their physicochemical properties",
-    version="1.0.0")
-
-@app.middleware("http")
-# обработка ошибок
-async def history_middleware(request: Request, call_next):
-    start_time = time.time()
-    request_body = None
-
-    # попытка прочитать тело запроса (для POST/PUT/PATCH)
-    if request.method in ("POST", "PUT", "PATCH"):
-        try:
-            request_body = await request.json()
-        except Exception:
-            request_body = None
-
-    response_body = None
-    status_code = 500  # дефолтный код на случай непредвиденной ошибки
-
-    try:
-        # Основной вызов эндпоинта
-        response = await call_next(request)
-        status_code = getattr(response, "status_code", 200)
-
-        # Попытка извлечь тело ответа
-        if hasattr(response, "body") and response.body:
-            try:
-                body_bytes = response.body
-                if isinstance(body_bytes, bytes):
-                    body_bytes = body_bytes.decode()
-                response_body = json.loads(body_bytes)
-            except Exception:
-                response_body = str(getattr(response, "body", None))
-
-    except RequestValidationError:
-        # любые ошибки валидации Pydantic/FastAPI
-        status_code = 400
-        response_body = {"error": "bad request"}
-        response = JSONResponse(content=response_body, status_code=status_code)
-
-    except HTTPException as e:
-        status_code = e.status_code
-        response_body = {"error": e.detail}
-        response = JSONResponse(content=response_body, status_code=status_code)
-
-    except Exception as e:
-        # любые другие непредвиденные ошибки
-        status_code = 500
-        response_body = {"error": str(e)}
-        response = JSONResponse(content=response_body, status_code=status_code)
-
-    finally:
-        # вычисляем реальное время обработки запроса
-        processing_time = time.time() - start_time
-        try:
-            async with AsyncSessionLocal() as db:
-                await save_history(
-                    db=db,
-                    endpoint=request.url.path,
-                    request_body={
-                        "data": request_body,
-                        "processing_time": processing_time
-                    } if request_body else {"processing_time": processing_time},
-                    response_body=response_body,
-                    code=status_code)
-        except Exception:
-            # логирование истории не должно ломать основной ответ
-            pass
-
-    return response
-
-
-
-
-class Model:
-    def  __init__(self, model_path: str = "trained_models/knn_neuro_sensory_toxicity.pkl"):
-        self.path = Path(model_path)
-        self.model = None
-        self.metadata = None
-        self.load_model()
-    
-    def load_model(self):
-        try:
-            with open(self.path, 'rb') as f:
-                self.model = pickle.load(f)
-        except FileNotFoundError:
-            raise
-        except Exception as e:
-            raise
-
-    def predict(self, data: np.ndarray) -> np.ndarray:
-        if self.model is None:
-            raise ValueError("Модель не загружена")
-        try:
-            return self.model.predict(data)
-        except Exception as e:
-            raise
-async def save_history(
-    db: AsyncSession,
-    endpoint: str,
-    request_body: Optional[dict],
-    response_body: Optional[dict],
-    code: int):
-    record = History(
-        endpoint=endpoint,
-        request_body=json.dumps(request_body, ensure_ascii=False) if request_body else None,
-        response_body=json.dumps(response_body, ensure_ascii=False) if response_body else None,
-        code=code)
-    db.add(record)
-    await db.commit()
-class Features:
-    def json_parse(data):
-        # data = json.loads(json_line)
-        smiles = data.get('smiles')
-        features = []
-        for i in range(1,len(data)):  
-            feature_key = f'feature{i}'
-            if feature_key in data:
-                features.append(data[feature_key])
-            else:
-                features.append(0.0)
-        return smiles, np.array([features])
-    
-# DATABASE SETUP / НАСТРОЙКА БАЗЫ ДАННЫХ
-
-BASE_DIR = Path(__file__).resolve().parent
-DATABASE_URL = f"sqlite+aiosqlite:///{BASE_DIR}/test.db"
-
-engine: AsyncEngine = create_async_engine(
-    DATABASE_URL,
-    echo=True,  # Log all SQL queries / Логировать все SQL запросы
-    future=True  # Use SQLAlchemy 2.0 style / Использовать стиль 2.0
-)
-
-# Create async session factory / Фабрика асинхронных сессий
-AsyncSessionLocal = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,  # Don't expire objects after commit / Не истекать объекты после commit
-    autocommit=False,
-    autoflush=False
-)
-class History(Base):
-    __tablename__ = "History"
-
-    id: Mapped[int] = mapped_column(
-        Integer,
-        primary_key=True,
-        index=True,
-        autoincrement=True
-    )
-
-    time: Mapped[datetime] = mapped_column(
-        DateTime,
-        default=datetime.utcnow,
-        nullable=False,
-        index=True
-    )
-
-    endpoint: Mapped[str] = mapped_column(
-        String(100),
-        nullable=False,
-        index=True
-    )
-
-    request_body: Mapped[Optional[str]] = mapped_column(
-        Text,
-        nullable=True  
-    )
-    response_body: Mapped[Optional[str]] = mapped_column(
-        Text,
-        nullable=True  
-    )
-    code: Mapped[int] = mapped_column(
-        Integer,
-        nullable=False,
-    )
-
-
+# Глобальные переменные
 model = None
+prediction_service = None
 
-# History.__table__.create(bind=engine, checkfirst=True)
 
-def get_model():
+def get_model() -> ToxModel:
+    """Получение экземпляра модели (синглтон)"""
     global model
     if model is None:
-        model = Model()
+        model = ToxModel()
     return model
 
 
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    async with AsyncSessionLocal() as session:
-        yield session 
+def get_prediction_service() -> PredictionService:
+    """Получение сервиса предсказаний"""
+    global prediction_service
+    if prediction_service is None:
+        prediction_service = PredictionService(get_model())
+    return prediction_service
 
-@app.on_event("startup")
-async def startup_event():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
 
+def get_db():
+    """Получение сессии БД (синхронно)"""
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Управление жизненным циклом приложения"""
+    # Старт
+    init_db()  # Синхронный вызов
+    get_model()  # Инициализируем модель
+    yield
+    # Завершение
+    close_db()
+
+
+# Создаем приложение
+app = FastAPI(
+    title=settings.API_TITLE,
+    description=settings.API_DESCRIPTION,
+    version=settings.API_VERSION,
+    lifespan=lifespan
+)
+
+# Добавляем middleware
+app.add_middleware(HistoryMiddleware)
+
+
+# ================= ЭНДПОИНТЫ =================
 
 @app.get("/", tags=["Root"])
 async def root():
     return {
         "message": "Welcome to FastAPI Toxicity Prediction",
         "documentation": "/docs",
-        "version": "1.0.0"
+        "version": settings.API_VERSION
     }
 
 
 @app.get("/health", status_code=status.HTTP_200_OK, tags=["Health"])
 async def health_check():
-    # Используется для проверки работоспособности API
-    return {
-        "status": "healthy",
-        "service": "FastAPI Toxicity Prediction"
-    }
+    """Проверка работоспособности"""
+    return HealthResponse(
+        status="healthy",
+        service="FastAPI Toxicity Prediction",
+        model_loaded=get_model().is_loaded
+    )
 
-# Pydantic-модель для входных данных
-class ForwardItem(BaseModel):
-    smiles: str = Field(..., description="SMILES строки молекулы")
-    features: Dict[str, float] = Field(..., description="Словарь feature1, feature2, ..., featureN")
 
-# В FastAPI должен быть route типа POST на /forward, который должен принимать один из двух форматов:
-# Если данные не содержат изображений, то необходимо передавать входные данные в теле запроса в формате JSON
 @app.post("/forward", status_code=status.HTTP_200_OK, tags=["Predict"])
 async def forward(
-    request_body: List[ForwardItem] = Body(...),
-    db: AsyncSession = Depends(get_db)):
-    start_time = time.time()  # измеряем время обработки запроса
+    request_body: list[ForwardItem],
+    db: SessionLocal = Depends(get_db)
+):
+    """
+    Предсказание токсичности для списка молекул
+    """
     if not request_body:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="bad request: пустой массив данных")
-    # Преобразуем Pydantic-модель в обычный список словарей
-    # Каждый словарь содержит smiles + все фичи
-    body = []
-    for item in request_body:
-         # Проверяем пустые словари внутри массива
-        if not item.smiles or not item.features:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="bad request: пустой объект внутри массива")
-        d = {"smiles": item.smiles}
-        d.update(item.features)
-        body.append(d)
-    # Если запрос неверного формата, то должен возвращаться код ошибки 400 с текстом ‘bad request’
-    if not body:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="bad request")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="bad request: пустой массив данных"
+        )
     
-    model = get_model()
+    # Проверяем валидность данных
+    for item in request_body:
+        if not item.smiles:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="bad request: smiles не может быть пустым"
+            )
+        if len(item.features) != 78:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"bad request: требуется 78 признаков, получено {len(item.features)}"
+            )
     
     try:
-        results = []
-        # Прогоняем все данные через модель
-        # Для каждого элемента создаём результат с smiles и toxity
-        for j in body:
-            smiles, input_data = Features.json_parse(j)
-            prediction = model.predict(input_data)
-            results.append({
-                "smiles": smiles,
-                "toxity": int(prediction[0])})
-        processing_time = time.time() - start_time  # измеряем фактическое время обработки
-        return JSONResponse(content=results)
+        service = get_prediction_service()
+        results = service.predict_batch(request_body)
+        return JSONResponse(content=[r.model_dump() for r in results])
     
-    # Если модель не смогла выполнить работу, то необходимо вернуть код ошибки 403 и вернуть сообщение: “модель не смогла обработать данные”
-    except Exception:
-        processing_time = time.time() - start_time
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail='модель не смогла обработать данные')
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"модель не смогла обработать данные: {str(e)}"
+        )
 
-# (5 баллов) Реализуйте GET-запрос /history, в котором будет показываться история всех запросов. История всех запросов должна находиться в базе данных.
 
 @app.get("/history", status_code=status.HTTP_200_OK, tags=["History"])
-async def history(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(History).order_by(History.time.desc()))
-    events = result.scalars().all()
+async def get_history(db: SessionLocal = Depends(get_db)):
+    """Получение истории всех запросов"""
+    events = HistoryService.get_all(db)
     return [
         {
             "id": event.id,
-            "time": event.time,
+            "time": event.time.isoformat(),
             "endpoint": event.endpoint,
             "request_body": event.request_body,
             "response_body": event.response_body,
@@ -304,64 +143,65 @@ async def history(db: AsyncSession = Depends(get_db)):
         for event in events
     ]
 
-# (5 баллов) Реализуйте запрос /stats, который возвращает статистику запросов:
-# среднее время обработки, квантили распределения (mean/50%/95%/99%)
-# характеристики входных запросов (длина сообщения/количество токенов, если работаем с текстом; размеры изображений)
 
 @app.get("/stats", status_code=status.HTTP_200_OK, tags=["Stats"])
-async def stats(db: AsyncSession = Depends(get_db)):
-    # Получаем все записи истории
-    result = await db.execute(select(History))
-    all_records = result.scalars().all()
+async def get_stats(db: SessionLocal = Depends(get_db)):
+    """Статистика по запросам"""
+    events = HistoryService.get_all(db)
+    
     times = []
     msg_lengths = []
     token_counts = []
-    for rec in all_records:
-        if not rec.request_body:
+    
+    for event in events:
+        if not event.request_body:
             continue
         try:
-            body = json.loads(rec.request_body)
-            # Время обработки
+            body = json.loads(event.request_body)
             if "processing_time" in body:
                 times.append(body["processing_time"])
-            # Длина сообщения
+            
             msg = json.dumps(body.get("data", ""))
             msg_lengths.append(len(msg))
-            # Количество токенов
             token_counts.append(len(msg.split()))
         except Exception:
             continue
-    # Функция для безопасного вычисления квантилей
-    def percentile_safe(data_list, percentile):
-        return float(np.percentile(data_list, percentile)) if data_list else 0.0
+    
+    def percentile_safe(data, p):
+        return float(np.percentile(data, p)) if data else 0.0
+    
     return {
         "processing_time": {
             "mean": float(np.mean(times)) if times else 0.0,
             "p50": percentile_safe(times, 50),
             "p95": percentile_safe(times, 95),
-            "p99": percentile_safe(times, 99),},
+            "p99": percentile_safe(times, 99),
+        },
         "input_stats": {
             "average_message_length": float(np.mean(msg_lengths)) if msg_lengths else 0.0,
-            "average_token_count": float(np.mean(token_counts)) if token_counts else 0.0,},
-        "total_requests": len(all_records)}
+            "average_token_count": float(np.mean(token_counts)) if token_counts else 0.0,
+        },
+        "total_requests": len(events)
+    }
 
-# (2 балла, PRO) Реализуйте DELETE-запрос /history, который удаляет историю предыдущих вызовов. В качестве заголовка запроса должен быть подтверждающий токен, который верифицирует данные
 
-# токен админа
-ADMIN_TOKEN = "secretoken"
 @app.delete("/history", status_code=status.HTTP_200_OK, tags=["History"])
-async def delete_history(token: str = Header(...), db: AsyncSession = Depends(get_db)):
-    """
-    Удаляет всю историю запросов. Требуется передача токена администратора через заголовок `token`.
-    """
-    if token != ADMIN_TOKEN:
-        # если неверный токен, то запрещено
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied: invalid token")
+async def delete_history(
+    token: str = Header(..., description="Токен администратора"),
+    db: SessionLocal = Depends(get_db)
+):
+    """Удаление всей истории запросов (требуется токен администратора)"""
+    if token != settings.ADMIN_TOKEN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: invalid token"
+        )
+    
     try:
-        # Удаляем все записи из таблицы History
-        await db.execute(delete(History))
-        await db.commit()
-        return {"message": "История запросов успешно очищена"}
+        deleted_count = HistoryService.clear_all(db)
+        return {"message": f"История запросов успешно очищена. Удалено {deleted_count} записей."}
     except Exception as e:
-        # Если что-то пошло не так
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Ошибка удаления истории: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка удаления истории: {str(e)}"
+        )
